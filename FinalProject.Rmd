@@ -1,0 +1,159 @@
+---
+title: "Group Project"
+output: html_document
+date: "2025-11-19"
+---
+
+## Setup Data
+
+Load data
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+data = read.csv("song_data.csv")
+head(data)
+```
+
+Drop the `song_name` column as this is just for identifying the song.
+```{r}
+to_drop = c("song_name")
+data = data[, !(names(data) %in% to_drop)]
+```
+
+Get the column names
+```{r}
+column_names = colnames(data)
+print(column_names)
+```
+
+From the description of the data, we know that `key`, `audio_mode` and `time_signature` are categorial data. So we can split the column names into categorial and continuous data
+```{r}
+categorial_col_names = c("key", "audio_mode", "time_signature")
+continuous_col_names = column_names[!column_names %in% categorial_col_names]
+
+continuous_data = data[, (names(data) %in% continuous_col_names)]
+categorial_data = data[, (names(data) %in% categorial_col_names)]
+
+cat("Categorial: ", categorial_col_names, "\n")
+cat("Continuous: ", continuous_col_names, "\n")
+```
+
+## Data Cleaning
+
+Check if there are duplicate songs in our dataset
+```{r}
+length(unique(data)) == nrow(data)
+```
+
+Since the number of unique songs is not the same as the number of rows in data, we can see that there are duplicate data in our dataset.
+
+Drop the exact duplicate data.
+```{r}
+data = unique(data)
+```
+
+Check for missing data.
+```{r}
+which(is.na(data))
+```
+
+Since integer(0) is being returned, this means that there is no missing data to clean.
+
+Check values and frequency of the categorial data
+```{r}
+for (name in categorial_col_names) {
+  frequency_table = table(data[[name]])
+  print(name)
+  print(frequency_table)
+  print(prop.table(frequency_table))
+  cat("\n")
+}
+```
+
+We can see that there is no inconsistent data for the categorial data.
+
+Apply factors to the categorial data
+```{r}
+for (name in categorial_col_names) {
+  data[[name]] = factor(data[[name]])
+}
+```
+
+## Data Exploration
+
+Display the mean, median, and standard deviation of each of the continuous data
+```{r}
+for (name in continuous_col_names) {
+  curr_col = data[[name]]
+  
+  curr_col_mean = mean(curr_col)
+  curr_col_median = median(curr_col)
+  curr_col_sd = sd(curr_col)
+
+  cat(name, "\n")
+  cat("Mean: ", curr_col_mean, "\n")
+  cat("Median: ", curr_col_median, "\n")
+  cat("Standard Deviation", curr_col_sd, "\n");
+  cat("\n")
+}
+```
+
+Plot a density of each continuous column
+```{r}
+for (name in continuous_col_names) {
+  print(ggplot(data, aes(x=data[[name]])) + geom_histogram(aes(y=..density..)) + geom_density(linewidth = 1) + labs(title=paste("Histogram of", name)))
+}
+```
+
+Plot a bar graph for each categorial data
+```{r}
+for (name in categorial_col_names) {
+  print(ggplot(data, aes(x=data[[name]])) + geom_bar() + labs(title=paste("Count of", name)))
+}
+```
+
+Display variance-covariance matrix
+```{r}
+varcov_matrix = cov(continuous_data)
+print(varcov_matrix)
+```
+
+Display correlation matrix
+```{r}
+cor_matrix = cor(continuous_data)
+print(cor_matrix)
+```
+
+Standarize data
+```{r}
+standardized_data = as.data.frame(scale(data[, continuous_col_names]))
+```
+
+Split into training and testing data
+```{r}
+set.seed(123456789)
+data_size = nrow(standardized_data)
+training_data_size = floor(data_size * 0.8)
+training_index = sample(seq_len(data_size), size=training_data_size)
+
+training_data = standardized_data[training_index,]
+testing_data = standardized_data[-training_index,]
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
