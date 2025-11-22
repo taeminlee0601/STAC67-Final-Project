@@ -141,19 +141,3 @@ training_index = sample(seq_len(data_size), size=training_data_size)
 training_data = standardized_data[training_index,]
 testing_data = standardized_data[-training_index,]
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
