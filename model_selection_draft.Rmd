@@ -1,0 +1,369 @@
+---
+title: "Group Project"
+output: html_document
+date: "2025-11-19"
+---
+
+## Setup Data
+
+Load data
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+
+data = read.csv("song_data.csv")
+head(data)
+```
+
+## Data Cleaning & Exploration
+
+Check if there are duplicate songs in our dataset
+```{r}
+length(unique(data)) == nrow(data)
+```
+
+Since the number of unique songs is not the same as the number of rows in data, we can see that there are duplicate data in our dataset.
+Drop the exact duplicate data.
+```{r}
+data = unique(data)
+data <- data %>%distinct(song_name, song_popularity, song_duration_ms, .keep_all = TRUE)
+# filtered_data <- cleaned_data %>% filter(song_name == "1950")
+```
+
+
+Check for missing data.
+```{r}
+which(is.na(data))
+```
+
+Drop the `song_name` column as this is just for identifying the song.
+```{r}
+to_drop = c("song_name")
+data = data[, !(names(data) %in% to_drop)]
+```
+
+Get the column names
+```{r}
+column_names = colnames(data)
+print(column_names)
+```
+
+From the description of the data, we know that `key`, `audio_mode` and `time_signature` are categorial data. So we can split the column names into categorial and quantitative data
+```{r}
+categorial_col_names = c("key", "audio_mode", "time_signature")
+continuous_col_names = column_names[!column_names %in% categorial_col_names]
+
+continuous_data = data[, (names(data) %in% continuous_col_names)]
+categorial_data = data[, (names(data) %in% categorial_col_names)]
+
+cat("Categorial: ", categorial_col_names, "\n")
+cat("Continuous: ", continuous_col_names, "\n")
+```
+
+Since integer(0) is being returned, this means that there is no missing data to clean.
+
+```{r}
+data$song_duration_m <- data$song_duration_ms/60000
+sum(data$song_duration_m > 15, na.rm = TRUE)
+sum(data$instrumentalness >0.8, na.rm = TRUE)
+```
+
+
+Check values and frequency of the categorial data
+```{r}
+for (name in categorial_col_names) {
+  frequency_table = table(data[[name]])
+  print(name)
+  print(frequency_table)
+  print(prop.table(frequency_table))
+  cat("\n")
+}
+```
+
+We can see that there is no inconsistent data for the categorial data.
+
+Apply factors to the categorial data
+```{r}
+for (name in categorial_col_names) {
+  data[[name]] = factor(data[[name]])
+}
+```
+
+
+Display the mean, median, and standard deviation of each of the continuous data
+```{r}
+for (name in continuous_col_names) {
+  curr_col = data[[name]]
+  
+  curr_col_mean = mean(curr_col)
+  curr_col_median = median(curr_col)
+  curr_col_sd = sd(curr_col)
+
+  cat(name, "\n")
+  cat("Mean: ", curr_col_mean, "\n")
+  cat("Median: ", curr_col_median, "\n")
+  cat("Standard Deviation", curr_col_sd, "\n");
+  cat("\n")
+}
+```
+
+Plot a density of each continuous variable
+
+```{r}
+library(gridExtra)
+hist_list <- list()
+for (name in continuous_col_names) {
+  p <- ggplot(data, aes(x = .data[[name]])) + 
+    geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "lightblue", alpha = 0.7) + 
+    geom_density(linewidth = 1, color = "darkred") +
+    labs(title = paste("Histogram of", name), x = name) +  # Fixed: x = name instead of data[[name]]
+    theme_minimal() +
+    theme(plot.title = element_text(size = 8),        # Smaller title
+      axis.title.x = element_text(size = 8),      # Smaller x-axis label
+      axis.title.y = element_text(size = 8),      # Smaller y-axis label
+      axis.text.x = element_text(size = 7),       # Smaller x-axis numbers
+      axis.text.y = element_text(size = 7))     # Smaller y-axis numbers 
+  
+  hist_list[[name]] <- p
+}
+
+# Arrange in grid
+grid.arrange(grobs = hist_list, ncol = 3)
+
+#for (name in continuous_col_names) {
+#  print(ggplot(data, aes(x=data[[name]])) + geom_histogram(aes(y=..density..)) + geom_density(linewidth = 1) + #labs(title=paste("Histogram of", name)))
+#}
+```
+
+
+```{r}
+library(gridExtra)
+
+# Create a list to store plots
+plot_list <- list()
+
+for (name in continuous_col_names) {
+  p <- ggplot(data, aes(y = .data[[name]])) + 
+    geom_boxplot(fill = "lightblue", color = "darkblue") +
+    labs(title = paste("Box Plot of", name), y = name) +
+    theme_minimal()+
+    theme(plot.title = element_text(size = 9),        # Smaller title
+      axis.title.y = element_text(size = 8),      # Smaller y-axis label
+      axis.text.x = element_text(size = 7),       # Smaller x-axis numbers
+      axis.text.y = element_text(size = 7))     # Smaller y-axis numbers 
+  
+  plot_list[[name]] <- p
+}
+
+# Arrange all plots in a grid
+grid.arrange(grobs = plot_list, ncol = 3)
+```
+
+
+
+Plot a bar graph for each categorical data
+```{r}
+#for (name in categorial_col_names) {
+#  print(ggplot(data, aes(x=data[[name]])) + geom_bar() + labs(title=paste("Count of", name)))
+#}
+
+plot_list3 <- list()
+for (name in categorial_col_names) {
+  p <- ggplot(data, aes(x = .data[[name]])) + 
+    geom_bar(fill = "lightcoral", alpha = 0.7) +
+    labs(title = name, x = name, y = "Count") +  # Shorter title
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 10),
+      axis.title = element_text(size = 8),
+      axis.text.x = element_text(size = 7),
+      axis.text.y = element_text(size = 7)
+    )
+  
+  plot_list3[[name]] <- p
+}
+grid.arrange(grobs = plot_list3)
+```
+
+Display variance-covariance matrix
+```{r}
+varcov_matrix = cov(continuous_data)
+print(varcov_matrix)
+```
+
+Display correlation matrix
+```{r}
+cor_matrix = cor(continuous_data)
+print(cor_matrix)
+```
+
+Using the correlation matrix, check for high correlation
+```{r}
+library(corrplot)
+corrplot(cor_matrix)
+```
+
+```{r}
+
+
+ggplot(data = melted_song, aes(Var1, Var2, fill = value)) + 
+  geom_tile() + 
+  geom_text(aes(label = ifelse(abs(value) > 0.3, round(value, 2), "")), 
+            size = 2.8, color = "white") +  # Only show values > |0.3|
+  scale_fill_viridis_c(option = "plasma", name = "Correlation") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+
+Standarize data
+```{r}
+# standardized_data = as.data.frame(scale(data[, continuous_col_names]))
+standardized_data <- data %>% mutate(song_duration_ms = as.numeric(scale(song_duration_ms)),
+                                     tempo = as.numeric(scale(tempo)),
+                                     loudness = as.numeric(scale(loudness)))
+```
+
+Split into training and testing data
+```{r}
+set.seed(123456789)
+data_size = nrow(standardized_data)
+training_data_size = floor(data_size * 0.8)
+training_index = sample(seq_len(data_size), size=training_data_size)
+
+training_data = standardized_data[training_index,]
+testing_data = standardized_data[-training_index,]
+```
+
+
+```{r}
+# for Main Multilinear regression
+library(MASS)
+fit_select = lm(data = training_data, song_popularity~ song_duration_ms +acousticness+
+                  danceability+ energy+ instrumentalness+ liveness+ loudness+ speechiness+
+                  tempo+ audio_valence + as.factor(key)+ as.factor(audio_mode)+ as.factor(time_signature))
+fit_simple = lm(data=training_data, song_popularity~1)
+stepAIC(fit_simple, scope = list(upper=fit_select, lower=fit_simple),direction="both",trace=TRUE)
+```
+```{r}
+# use the best multilinear regression model found by stepAIC
+model1 <-lm(data=training_data, song_popularity ~ instrumentalness + audio_valence + danceability + 
+    liveness + loudness + energy + acousticness + tempo + as.factor(audio_mode))
+summary(model1)
+```
+
+
+
+```{r}
+summary(fit_simple)
+```
+
+```{r}
+# for Multilinear regression with Interaction terms
+library(MASS)
+fit_select2 = lm(data = training_data, song_popularity~ song_duration_ms +acousticness+
+                  danceability+ energy+ instrumentalness+ liveness+ loudness+ speechiness+
+                  tempo+ audio_valence + as.factor(key)+ as.factor(audio_mode)+ as.factor(time_signature)+
+                  acousticness:loudness+ audio_valence:danceability+ audio_valence:energy+ energy:loudness+
+                  acousticness:energy+ energy:instrumentalness+ loudness:instrumentalness+
+                  danceability:speechiness+ audio_valence:loudness+ as.factor(key):song_duration_ms
+                  +as.factor(key):acousticness+ as.factor(key):danceability+ as.factor(key):energy+
+                  as.factor(key):instrumentalness+ as.factor(key):liveness+ as.factor(key):loudness+ 
+                  as.factor(key):speechiness+ as.factor(key):tempo+ as.factor(key):audio_valence+
+                  song_duration_ms:as.factor(audio_mode) +acousticness:as.factor(audio_mode)+
+                  danceability:as.factor(audio_mode)+ energy:as.factor(audio_mode)+ 
+                  instrumentalness:as.factor(audio_mode)+ liveness:as.factor(audio_mode)+ 
+                  loudness:as.factor(audio_mode)+ speechiness:as.factor(audio_mode)+
+                  tempo:as.factor(audio_mode)+ audio_valence:as.factor(audio_mode)+
+                  song_duration_ms:as.factor(time_signature) +acousticness:as.factor(time_signature)+
+                  danceability:as.factor(time_signature)+ energy:as.factor(time_signature)+
+                  instrumentalness:as.factor(time_signature)+ liveness:as.factor(time_signature)+
+                  loudness:as.factor(time_signature)+ speechiness:as.factor(time_signature)+
+                  tempo:as.factor(time_signature)+ audio_valence:as.factor(time_signature)
+)
+fit_simple2 = lm(data=training_data, song_popularity~1)
+stepAIC(fit_simple, scope = list(upper=fit_select2, lower=fit_simple),direction="both",trace=TRUE)
+```
+```{r}
+model2= lm(song_popularity ~ instrumentalness + audio_valence + 
+    danceability + liveness + loudness + energy + acousticness + 
+    as.factor(audio_mode) + speechiness + instrumentalness:loudness + 
+    audio_valence:energy + loudness:acousticness + loudness:energy + 
+    as.factor(audio_mode):speechiness, data = training_data)
+summary(model2)
+```
+
+polynomial regression attempts
+```{r}
+library(patchwork)
+# AI draws me these plots, I simply apply without understanding!
+# my goal is to know which variables need polynomial terms
+# So I add polynomial terms to those variables with trumpet shaped residuals
+# But this can be incorrect. The residual plots we learned to diagnose in class needs to first fit a model.
+
+# Create scatterplots with loess curves for all continuous variables
+residual_list <- list()
+for (var in continuous_col_names) {
+  p <- ggplot(training_data, aes(x = .data[[var]], y = song_popularity)) +
+    geom_point(alpha = 0.3) +
+    geom_smooth(method = "loess", color = "red", se = TRUE) +
+    geom_smooth(method = "lm", color = "blue", se = FALSE, linetype = "dashed") +
+    labs(title = paste("Relationship:", var), x = var, y = "Popularity")
+  residual_list[[var]] <- p
+}
+
+# Arrange all plots
+wrap_plots(residual_list, ncol = 3)
+```
+
+```{r}
+trail = lm(data = training_data, song_popularity~ song_duration_ms +acousticness+
+                  danceability+ energy+ instrumentalness+ liveness+ loudness+ speechiness+
+                  tempo+ audio_valence + as.factor(key)+ as.factor(audio_mode)+ as.factor(time_signature)+
+                  I(energy^2)+ I(danceability^2)+ I(loudness^2)
+             )
+summary(trail)
+```
+
+
+
+```{r}
+# polynomial regression
+# My goal is to fit the full 2-degree polynomial model. It's too troublesome to use lecture method I()
+# AI told me to do so. If AI is correct, this model still has a low R^2
+library(caret)
+library(caret)
+library(MASS)
+
+# Create polynomial data frame (your existing code)
+continuous_vars <- c("song_duration_ms", "acousticness", "danceability", 
+                     "energy", "instrumentalness", "liveness", "loudness", 
+                     "speechiness", "tempo", "audio_valence")
+
+poly_data <- training_data[continuous_vars]
+poly_terms <- poly(as.matrix(poly_data), degree = 2, raw = TRUE)
+poly_df <- as.data.frame(poly_terms)
+names(poly_df) <- paste0("poly_", 1:ncol(poly_df))
+
+training_poly <- cbind(
+  song_popularity = training_data$song_popularity,
+  poly_df,
+  training_data[c("key", "audio_mode", "time_signature")]
+)
+
+# Create models using training_poly instead of training_data
+fit_simple_poly <- lm(song_popularity ~ 1, data = training_poly)
+model_poly <- lm(song_popularity ~ ., data = training_poly)
+summary(model_poly)
+# Now use stepAIC with the correct data
+#step_result <- stepAIC(fit_simple_poly, 
+#                       scope = list(upper = model_poly, lower = fit_simple_poly),
+ #                      direction = "both", 
+  #                     trace = TRUE)
+```
+

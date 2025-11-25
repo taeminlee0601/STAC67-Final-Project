@@ -126,18 +126,71 @@ cor_matrix = cor(continuous_data)
 print(cor_matrix)
 ```
 
-Standarize data
+Using the correlation matrix, check for high correlation
 ```{r}
-standardized_data = as.data.frame(scale(data[, continuous_col_names]))
+library(corrplot)
+corrplot(cor_matrix)
 ```
+
+We can see high correlation between some predictors:
+- loudness and energy
+- energy and acousticness
+- loudness and acousticness
 
 Split into training and testing data
 ```{r}
 set.seed(123456789)
-data_size = nrow(standardized_data)
+data_size = nrow(data)
 training_data_size = floor(data_size * 0.8)
 training_index = sample(seq_len(data_size), size=training_data_size)
 
-training_data = standardized_data[training_index,]
-testing_data = standardized_data[-training_index,]
+training_data = data[training_index,]
+testing_data = data[-training_index,]
 ```
+
+Standarize data
+```{r}
+continuous_predictors = continuous_col_names[continuous_col_names != "song_popularity"]
+training_data[continuous_predictors] = scale(training_data[continuous_predictors])
+```
+
+## Model Selection
+
+### Main Effect Model
+
+Fit the main effect model
+```{r}
+full_main_model = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
+summary(full_main_model)
+```
+
+Check VIF values to see if there is multicollinearity
+```{r}
+library(car)
+vif(full_main_model)
+```
+
+There is no VIF greater than 10, there is no multicollinearity problem.
+
+Check LINE assumptions
+```{r}
+plot(full_main_model)
+```
+
+We can see that the normality assumption is violated 
+
+
+Do stepwise
+```{r}
+simple_model = lm(song_popularity ~ 1, data=training_data)
+step_model = stepAIC(simple_model, scope = list(upper=full_main_model, lower=simple_model),direction="both",trace=TRUE)
+```
+
+Check the summary of the step_model
+```{r}
+summary(step_model)
+```
+
+
+
+
