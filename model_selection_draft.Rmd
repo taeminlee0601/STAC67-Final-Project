@@ -208,16 +208,16 @@ corrplot(cor_matrix)
 ```{r}
 
 
-ggplot(data = melted_song, aes(Var1, Var2, fill = value)) + 
-  geom_tile() + 
-  geom_text(aes(label = ifelse(abs(value) > 0.3, round(value, 2), "")), 
-            size = 2.8, color = "white") +  # Only show values > |0.3|
-  scale_fill_viridis_c(option = "plasma", name = "Correlation") +
-  theme_minimal() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
-    axis.text.y = element_text(size = 8)
-  )
+# ggplot(data = melted_song, aes(Var1, Var2, fill = value)) + 
+#   geom_tile() + 
+#   geom_text(aes(label = ifelse(abs(value) > 0.3, round(value, 2), "")), 
+#             size = 2.8, color = "white") +  # Only show values > |0.3|
+#   scale_fill_viridis_c(option = "plasma", name = "Correlation") +
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+#     axis.text.y = element_text(size = 8)
+#   )
 ```
 
 

@@ -177,8 +177,20 @@ Check LINE assumptions
 plot(full_main_model)
 ```
 
-We can see that the normality assumption is violated 
+We can see that the normality assumption is violated
 
+Do a Shapiro Wilk's Test
+```{r}
+residual = full_main_model$residuals
+residual_sample = sample(residual, 5000)
+shapiro.test(residual_sample)
+```
+
+Apply box-cox transformation
+```{r}
+library(MASS)
+boxcox(full_main_model)
+```
 
 Do stepwise
 ```{r}
