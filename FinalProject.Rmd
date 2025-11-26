@@ -33,9 +33,6 @@ From the description of the data, we know that `key`, `audio_mode` and `time_sig
 categorial_col_names = c("key", "audio_mode", "time_signature")
 continuous_col_names = column_names[!column_names %in% categorial_col_names]
 
-continuous_data = data[, (names(data) %in% continuous_col_names)]
-categorial_data = data[, (names(data) %in% categorial_col_names)]
-
 cat("Categorial: ", categorial_col_names, "\n")
 cat("Continuous: ", continuous_col_names, "\n")
 ```
@@ -57,6 +54,11 @@ data = unique(data)
 Check for missing data.
 ```{r}
 which(is.na(data))
+```
+Set categorial and continuous data
+```{r}
+continuous_data = data[, (names(data) %in% continuous_col_names)]
+categorial_data = data[, (names(data) %in% categorial_col_names)]
 ```
 
 Since integer(0) is being returned, this means that there is no missing data to clean.
@@ -114,6 +116,18 @@ for (name in categorial_col_names) {
 }
 ```
 
+
+Plot a scatter plot comparing the song popularity with predictors
+```{r}
+for (name in continuous_col_names) {
+  if (name == "song_popularity") {
+    next
+  }
+  
+  print(ggplot(data, aes(x=data[[name]], y=song_popularity)) + geom_point(size = 2, scale=23) + labs(title=paste("Scatterplot of song popularity vs", name)))
+}
+```
+
 Display variance-covariance matrix
 ```{r}
 varcov_matrix = cov(continuous_data)
@@ -151,7 +165,12 @@ testing_data = data[-training_index,]
 Standarize data
 ```{r}
 continuous_predictors = continuous_col_names[continuous_col_names != "song_popularity"]
-training_data[continuous_predictors] = scale(training_data[continuous_predictors])
+
+training_mean = sapply(training_data[continuous_predictors], mean)
+training_sd = sapply(training_data[continuous_predictors], sd)
+
+training_data[continuous_predictors] = scale(training_data[continuous_predictors], center=training_mean, scale=training_sd)
+testing_data[continuous_predictors] = scale(testing_data[continuous_predictors], center=training_mean, scale=training_sd)
 ```
 
 ## Model Selection
