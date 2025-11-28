@@ -236,24 +236,24 @@ influential_idx = sort(unique(c(DFFITS_influential, D_influential, DFBETAS_influ
 influential_data = training_data[influential_idx, ]
 ```
 
-Drop influential points and fit
-```{r}
-dropped_training_data = training_data[-influential_idx,]
-full_main_model_dropped = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
+<!-- Drop influential points and fit -->
+<!-- ```{r} -->
+<!-- dropped_training_data = training_data[-influential_idx,] -->
+<!-- full_main_model_dropped = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data) -->
 
-summary(full_main_model_dropped)
-```
+<!-- summary(full_main_model_dropped) -->
+<!-- ``` -->
 
 Check LINE Assumptions
 ```{r}
-plot(full_main_model_dropped)
+plot(full_main_model)
 ```
 
 It seems like normality assumption is violated. We can further check this with Shapiro Wilk Test
 ```{r}
 set.seed(123456789)
 
-resid = full_main_model_dropped$residuals
+resid = full_main_model$residuals
 residual_sample = sample(residual, 5000)
 
 shapiro.test(residual_sample)
@@ -261,12 +261,18 @@ shapiro.test(residual_sample)
 
 We can see that the normality assumption is violated. Check if response variable is all positive
 ```{r}
-min(dropped_training_data$song_popularity)
+min(training_data$song_popularity)
+```
+
+Since all song popularity is not positive, we need to shift the song popularity
+```{r}
+training_data$song_popularity_shifted = training_data$song_popularity + 1
+full_main_model_shifted = lm(song_popularity_shifted ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
 ```
 
 ```{r}
 library(MASS)
-boxcox_main_result = boxcox(full_main_model_dropped)
+boxcox_main_result = boxcox(full_main_model_shifted)
 ```
 
 Get the lambda value
@@ -277,12 +283,12 @@ main_lambda
 
 Apply a boxcox transformation
 ```{r}
-dropped_training_data$song_popularity_box_cox = (dropped_training_data$song_popularity^main_lambda - 1) / main_lambda
+training_data$song_popularity_box_cox = (training_data$song_popularity_shifted^main_lambda - 1) / main_lambda
 ```
 
 Fit new model
 ```{r}
-full_main_model_box_cox = lm(song_popularity_box_cox ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
+full_main_model_box_cox = lm(song_popularity_box_cox ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
 ```
 
 Check LINE Assumptions now
@@ -301,11 +307,11 @@ shapiro.test(residual_sample)
 
 
 ```{r}
-which(summary(full_main_model_dropped)$coefficients[, "Pr(>|t|)"] >= 0.05)
+which(summary(full_main_model)$coefficients[, "Pr(>|t|)"] >= 0.05)
 ```
 
 ```{r}
-reduced_model = lm(song_popularity_box_cox ~  speechiness + acousticness + danceability + energy + instrumentalness + liveness + loudness + tempo + audio_valence + audio_mode, data=dropped_training_data)
+reduced_model = lm(song_popularity_box_cox ~  acousticness + danceability + energy + instrumentalness + liveness + loudness + tempo + audio_valence + audio_mode, data=training_data)
 ```
 
 ```{r}
@@ -314,18 +320,26 @@ anova(reduced_model, full_main_model_box_cox)
 
 perform f-test
 ```{r}
-f_stat = ((7734637 - 7655049) / 15) / (7655049 / 6600)
-f_crit_val = qf(0.95, df1=15, df2=6600)
+f_stat = ((19803528 - 19767873) / 17) / (19767873 / 11912)
+f_crit_val = qf(0.95, df1=17, df2=11912)
 
 f_stat < f_crit_val
 ```
 
-Therefore, we cannot drop these columns.
+<!-- perform f-test for dropped influential points -->
+<!-- ```{r} -->
+<!-- f_stat = ((7734637 - 7655049) / 15) / (7655049 / 6600) -->
+<!-- f_crit_val = qf(0.95, df1=15, df2=6600) -->
+
+<!-- f_stat < f_crit_val -->
+<!-- ``` -->
+
+Therefore, we can drop these columns.
 
 Check VIF values to see if there is multicollinearity
 ```{r}
 library(car)
-vif(full_main_model_box_cox)
+vif(reduced_model)
 ```
 
 There is no VIF greater than 10, there is no multicollinearity problem.
