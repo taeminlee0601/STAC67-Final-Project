@@ -55,6 +55,7 @@ Check for missing data.
 ```{r}
 which(is.na(data))
 ```
+
 Set categorial and continuous data
 ```{r}
 continuous_data = data[, (names(data) %in% continuous_col_names)]
@@ -209,6 +210,40 @@ testing_data[continuous_predictors] = scale(testing_data[continuous_predictors],
 
 ### Main Effect Model
 
+Setup
+```{r}
+model_statistics <- function(model, data) {
+  # MSE of the model
+  sigma2 = summary(model)$sigma^2
+  
+  # RSS of the model
+  RSS = sum(residuals(model)^2)
+  
+  # number of parameters including intercept
+  p = length(coef(model))
+  
+  # sample size
+  n = nrow(data)
+  
+  # Mallows' Cp
+  Cp = RSS / sigma2 - (n - 2*p)
+  
+  # residuals
+  e = residuals(model)
+  
+  # leverage values
+  h = hatvalues(model)
+  
+  # PRESS
+  PRESS = sum((e / (1 - h))^2)
+  
+  cat("Cp:", Cp, "\n")
+  cat("AIC:", AIC(model), "\n")
+  cat("BIC:", BIC(model), "\n")
+  cat("PRESS:", PRESS, "\n")
+}
+```
+
 Fit the main effect model
 ```{r}
 full_main_model = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
@@ -263,21 +298,400 @@ ols_plot_cooksd_chart(full_main_model)
 ols_plot_dfbetas(full_main_model)
 ```
 
-
-
-
+Get the data of the influential points
 ```{r}
 influential_idx = sort(unique(c(DFFITS_influential, D_influential, DFBETAS_influential_rows)))
 influential_data = training_data[influential_idx, ]
 ```
 
-Drop influential points and fit
+Get dataset with influential points dropped
 ```{r}
 dropped_training_data = training_data[-influential_idx,]
+```
+
+#### Main Effect Model on data with influential points
+
+```{r}
+summary(full_main_model)
+```
+
+Check LINE Assumptions
+```{r}
+plot(full_main_model)
+```
+
+We can see that normality assumption is violated. We can check this with Shapiro-Wilk's test
+```{r}
+set.seed(123456789)
+
+residual = full_main_model$residuals
+residual_sample = sample(residual, 5000)
+
+shapiro.test(residual_sample)
+```
+
+Since the p-value < 0.5, we can see that normality assumption is violated.
+
+We can apply box-cox transformation to try to fix this. We know that all values for response variable needs to be positive to apply box-cox.
+Check minimum value of song_popularity
+```{r}
+min(training_data$song_popularity)
+```
+
+Since the minimum is not positive, we can apply a shift by 1 to make song_popularity positive.
+```{r}
+training_data$song_popularity_shifted = training_data$song_popularity + 1
+```
+
+Refit model to use song_popularity_shifted
+```{r}
+full_main_model_shifted = lm(song_popularity_shifted ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
+```
+
+We can find best lambda value for box-cox transformation.
+```{r}
+library(MASS)
+boxcox_full_main = boxcox(full_main_model_shifted)
+```
+
+Get the best lambda value
+```{r}
+lambda_full_main = boxcox_full_main$x[which.max(boxcox_full_main$y)]
+lambda_full_main
+```
+
+Apply box-cox transformation
+```{r}
+training_data$song_popularity_box_cox = (training_data$song_popularity_shifted^lambda_full_main - 1) / lambda_full_main
+```
+
+Fit new model with box-cox transformation applied
+```{r}
+full_main_model_box_cox = lm(song_popularity_box_cox ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
+
+summary(full_main_model_box_cox)
+```
+
+Check LINE assumptions after applying box-cox
+```{r}
+plot(full_main_model_box_cox)
+```
+
+We can see that the normality assumption got slightly better but still is violated.
+
+Check Shapiro Wilk's test again
+```{r}
+set.seed(123456789)
+
+residual_box_cox = full_main_model_box_cox$residuals
+residual_box_cox_sample = sample(residual_box_cox, 5000)
+
+shapiro.test(residual_sample)
+```
+
+The p-value from the Shapiro-Wilk test is still less than 0.5, so normality is still violated.
+
+We can also check for multicollinearity. We will need to check VIF.
+```{r}
+library(car)
+vif(full_main_model_box_cox)
+```
+
+We can see that none of the VIF values > 5, therefore there is no multicollinearity evident.
+
+#### Approach 0: Using Main Effect Model without box-cox transformation
+
+This is the model with all predictors
+```{r}
+summary(full_main_model)
+```
+
+Print model statistics
+```{r}
+model_statistics(full_main_model, training_data)
+```
+
+#### Approach 1: Using Main Effect Model with box-cox transformation
+
+This is the model with all predictors
+```{r}
+summary(full_main_model_box_cox)
+```
+
+Print model statistics
+```{r}
+model_statistics(full_main_model_box_cox, training_data)
+```
+
+#### Approach 2: Dropping predictors using F-test
+
+Now, we can check which predictors we should drop. First, we can find predictors where their p-values > 0.5
+```{r}
+which(summary(full_main_model)$coefficients[, "Pr(>|t|)"] >= 0.05)
+```
+
+We can see that song_duration_ms, speechiness, key and time_signature all have p-values greater than 0.5. We can do an F-test to see if we can drop these predictors.
+
+Fit a reduced model
+```{r}
+reduced_model = lm(song_popularity_box_cox ~ acousticness + danceability + energy + instrumentalness + liveness + loudness + tempo + audio_valence + audio_mode, data=training_data)
+```
+
+Display ANOVA table
+```{r}
+anova(reduced_model, full_main_model_box_cox)
+```
+
+Do an F-test to see if we can drop song_duration_ms, speechiness, key and time_signature
+```{r}
+f_stat = ((19803528 - 19767873) / 17) / (19767873 / 11912)
+f_crit_val = qf(0.95, df1=17, df2=11912)
+
+f_stat < f_crit_val
+```
+
+Since f_stat < f_crit_val, we fail to reject the hypothesis. Therefore, we can drop song_duration_ms, speechiness, key and time_signature.
+
+Therefore, this is our final model using F-test
+```{r}
+summary(reduced_model)
+```
+
+Print model statistics
+```{r}
+model_statistics(reduced_model, training_data)
+```
+
+#### Approach 3: Apply Stepwise AIC
+
+Now, we can apply a stepwise AIC to main effect_model
+```{r}
+simple_model = lm(song_popularity_box_cox ~ 1, data=training_data)
+stepwise_model = stepAIC(simple_model, scope = list(upper=full_main_model_box_cox, lower=simple_model),direction="both",trace=TRUE)
+```
+
+Therefore, we get this final model
+```{r}
+summary(stepwise_model)
+```
+
+Print model statistics
+```{r}
+model_statistics(stepwise_model, training_data)
+```
+
+Note: Approach 2 and Approach 3 output the same model... so basically we did stepwise ourselves.
+
+### Interaction Model on data with influential points
+
+Fit a full interaction model without box cox transformation
+```{r}
+full_interaction_model = lm(data = training_data, song_popularity ~ song_duration_ms +acousticness+
+                  danceability+ energy+ instrumentalness+ liveness+ loudness+ speechiness+
+                  tempo+ audio_valence + as.factor(key)+ as.factor(audio_mode)+ as.factor(time_signature)+
+                  acousticness:loudness+ audio_valence:danceability+ audio_valence:energy+ energy:loudness+
+                  acousticness:energy+ energy:instrumentalness+ loudness:instrumentalness+
+                  danceability:speechiness+ audio_valence:loudness+ as.factor(key):song_duration_ms
+                  +as.factor(key):acousticness+ as.factor(key):danceability+ as.factor(key):energy+
+                  as.factor(key):instrumentalness+ as.factor(key):liveness+ as.factor(key):loudness+ 
+                  as.factor(key):speechiness+ as.factor(key):tempo+ as.factor(key):audio_valence+
+                  song_duration_ms:as.factor(audio_mode) +acousticness:as.factor(audio_mode)+
+                  danceability:as.factor(audio_mode)+ energy:as.factor(audio_mode)+ 
+                  instrumentalness:as.factor(audio_mode)+ liveness:as.factor(audio_mode)+ 
+                  loudness:as.factor(audio_mode)+ speechiness:as.factor(audio_mode)+
+                  tempo:as.factor(audio_mode)+ audio_valence:as.factor(audio_mode)+
+                  song_duration_ms:as.factor(time_signature) +acousticness:as.factor(time_signature)+
+                  danceability:as.factor(time_signature)+ energy:as.factor(time_signature)+
+                  instrumentalness:as.factor(time_signature)+ liveness:as.factor(time_signature)+
+                  loudness:as.factor(time_signature)+ speechiness:as.factor(time_signature)+
+                  tempo:as.factor(time_signature)+ audio_valence:as.factor(time_signature))
+```
+
+Fit a full interaction model with box cox transformation
+```{r}
+full_interaction_model_box_cox = lm(data = training_data, song_popularity_box_cox ~ song_duration_ms +acousticness+
+                  danceability+ energy+ instrumentalness+ liveness+ loudness+ speechiness+
+                  tempo+ audio_valence + as.factor(key)+ as.factor(audio_mode)+ as.factor(time_signature)+
+                  acousticness:loudness+ audio_valence:danceability+ audio_valence:energy+ energy:loudness+
+                  acousticness:energy+ energy:instrumentalness+ loudness:instrumentalness+
+                  danceability:speechiness+ audio_valence:loudness+ as.factor(key):song_duration_ms
+                  +as.factor(key):acousticness+ as.factor(key):danceability+ as.factor(key):energy+
+                  as.factor(key):instrumentalness+ as.factor(key):liveness+ as.factor(key):loudness+ 
+                  as.factor(key):speechiness+ as.factor(key):tempo+ as.factor(key):audio_valence+
+                  song_duration_ms:as.factor(audio_mode) +acousticness:as.factor(audio_mode)+
+                  danceability:as.factor(audio_mode)+ energy:as.factor(audio_mode)+ 
+                  instrumentalness:as.factor(audio_mode)+ liveness:as.factor(audio_mode)+ 
+                  loudness:as.factor(audio_mode)+ speechiness:as.factor(audio_mode)+
+                  tempo:as.factor(audio_mode)+ audio_valence:as.factor(audio_mode)+
+                  song_duration_ms:as.factor(time_signature) +acousticness:as.factor(time_signature)+
+                  danceability:as.factor(time_signature)+ energy:as.factor(time_signature)+
+                  instrumentalness:as.factor(time_signature)+ liveness:as.factor(time_signature)+
+                  loudness:as.factor(time_signature)+ speechiness:as.factor(time_signature)+
+                  tempo:as.factor(time_signature)+ audio_valence:as.factor(time_signature))
+```
+
+#### Approach 0: Full interaction model without box-cox transformation
+
+This is the full interaction model
+```{r}
+summary(full_interaction_model)
+```
+
+Print model statistics
+```{r}
+model_statistics(full_interaction_model, training_data)
+```
+
+#### Approach 1: Full interaction model with box-cox transformation
+
+This is the full interaction model
+```{r}
+summary(full_interaction_model_box_cox)
+```
+
+Print model statistics
+```{r}
+model_statistics(full_interaction_model_box_cox, training_data)
+```
+
+#### Approach 2: Drop predictors using F-test
+
+```{r}
+reduced_interaction_model = lm(song_popularity_box_cox ~ instrumentalness + audio_valence + as.factor(key) + as.factor(audio_mode) + as.factor(time_signature), data=training_data)
+```
+
+```{r}
+anova(reduced_interaction_model, full_interaction_model_box_cox)
+```
+
+```{r}
+f_stat = ((19980203 - 19093972) / 169) / (19093972 / 11751)
+f_crit_val = qf(0.95, df1=169, df2=11751)
+
+f_stat < f_crit_val
+```
+
+We cannot drop these predictors.
+
+#### Approach 3: Drop predictors stepwise AIC
+
+Apply stepwise AIC to the full interaction model
+```{r}
+simple_model_interaction = lm(song_popularity_box_cox ~ 1, data=training_data)
+stepwise_interaction_model = stepAIC(simple_model, scope = list(upper=full_interaction_model_box_cox, lower=simple_model_interaction),direction="both",trace=TRUE)
+```
+
+This is the final interaction model after stepwise AIC
+```{r}
+summary(stepwise_interaction_model)
+```
+
+Print model statistics
+```{r}
+model_statistics(stepwise_interaction_model, training_data)
+```
+
+### Main Effect Model without influential points
+
+Drop influential points and fit
+```{r}
 full_main_model_dropped = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
 
 summary(full_main_model_dropped)
 ```
+
+Check LINE assumptions
+```{r}
+plot(full_main_model_dropped)
+```
+
+We can see that normality assumption is violated. We can check this with Shapiro-Wilk's test
+```{r}
+set.seed(123456789)
+
+residual_dropped = full_main_model_dropped$residuals
+residual_dropped_sample = sample(residual_dropped, 5000)
+
+shapiro.test(residual_dropped_sample)
+```
+
+Since p-value < 0.5, we can see that normality assumption is violated.
+
+We can apply box-cox transformation to try to fix this. We know that all values for response variable needs to be positive to apply box-cox.
+Check minimum value of song_popularity
+```{r}
+min(dropped_training_data$song_popularity)
+```
+
+Since response variable is all positive, we can apply box cox transformation.
+
+We can find best lambda value for box-cox transformation.
+```{r}
+library(MASS)
+boxcox_full_main_dropped = boxcox(full_main_model_dropped)
+```
+
+Get the best lambda value
+```{r}
+lambda_full_main_dropped = boxcox_full_main_dropped$x[which.max(boxcox_full_main_dropped$y)]
+lambda_full_main_dropped
+```
+
+Apply box-cox transformation
+```{r}
+dropped_training_data$song_popularity_box_cox = (dropped_training_data$song_popularity^lambda_full_main_dropped - 1) / lambda_full_main_dropped
+```
+
+Fit model with box-cox
+```{r}
+full_main_model_dropped_box_cox = lm(song_popularity_box_cox ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
+
+summary(full_main_model_dropped_box_cox)
+```
+
+Check LINE assumptions after applying box-cox
+```{r}
+plot(full_main_model_dropped_box_cox)
+```
+
+We can see that the normality assumption got slightly better but still is violated.
+
+Check Shapiro Wilk's test again
+```{r}
+set.seed(123456789)
+
+residual_dropped_box_cox = full_main_model_dropped_box_cox$residuals
+residual_dropped_box_cox_sample = sample(residual_dropped_box_cox, 5000)
+
+shapiro.test(residual_dropped_box_cox_sample)
+```
+
+The p-value from the Shapiro-Wilk test is still less than 0.5, so normality is still violated.
+
+We can also check for multicollinearity. We will need to check VIF.
+```{r}
+library(car)
+vif(full_main_model_dropped_box_cox)
+```
+
+We can see that none of the VIF values > 5, therefore there is no multicollinearity evident.
+
+
+
+Therefore the final model is:
+```{r}
+summary(full_main_model_dropped_box_cox)
+```
+
+Print model statistics
+```{r}
+model_statistics(full_main_model_dropped_box_cox, dropped_training_data)
+```
+
+
+
+
+
 
 ```{r}
 # full model MSE
@@ -307,7 +721,6 @@ h <- hatvalues(full_main_model_dropped)
 PRESS <- sum((e / (1 - h))^2)
 PRESS
 ```
-
 
 
 ```{r}

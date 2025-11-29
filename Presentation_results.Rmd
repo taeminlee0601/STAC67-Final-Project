@@ -1,0 +1,550 @@
+---
+title: "Group Project"
+output: html_document
+date: "2025-11-19"
+---
+
+## Setup Data
+
+Load data
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+data = read.csv("song_data.csv")
+head(data)
+```
+
+Drop the `song_name` column as this is just for identifying the song.
+```{r}
+to_drop = c("song_name")
+data = data[, !(names(data) %in% to_drop)]
+```
+
+Get the column names
+```{r}
+column_names = colnames(data)
+print(column_names)
+```
+
+From the description of the data, we know that `key`, `audio_mode` and `time_signature` are categorial data. So we can split the column names into categorial and continuous data
+```{r}
+categorial_col_names = c("key", "audio_mode", "time_signature")
+continuous_col_names = column_names[!column_names %in% categorial_col_names]
+
+cat("Categorial: ", categorial_col_names, "\n")
+cat("Continuous: ", continuous_col_names, "\n")
+```
+
+## Data Cleaning
+
+Check if there are duplicate songs in our dataset
+```{r}
+length(unique(data)) == nrow(data)
+```
+
+Since the number of unique songs is not the same as the number of rows in data, we can see that there are duplicate data in our dataset.
+
+Drop the exact duplicate data.
+```{r}
+data = unique(data)
+```
+
+Check for missing data.
+```{r}
+which(is.na(data))
+```
+Set categorial and continuous data
+```{r}
+continuous_data = data[, (names(data) %in% continuous_col_names)]
+categorial_data = data[, (names(data) %in% categorial_col_names)]
+```
+
+Since integer(0) is being returned, this means that there is no missing data to clean.
+
+Check values and frequency of the categorial data
+```{r}
+for (name in categorial_col_names) {
+  frequency_table = table(data[[name]])
+  print(name)
+  print(frequency_table)
+  print(prop.table(frequency_table))
+  cat("\n")
+}
+```
+
+We can see that there is no inconsistent data for the categorial data.
+
+Apply factors to the categorial data
+```{r}
+for (name in categorial_col_names) {
+  data[[name]] = factor(data[[name]])
+}
+```
+
+## Data Exploration
+
+Display the mean, median, and standard deviation of each of the continuous data
+```{r}
+for (name in continuous_col_names) {
+  curr_col = data[[name]]
+  
+  curr_col_mean = mean(curr_col)
+  curr_col_median = median(curr_col)
+  curr_col_sd = sd(curr_col)
+
+  cat(name, "\n")
+  cat("Mean: ", curr_col_mean, "\n")
+  cat("Median: ", curr_col_median, "\n")
+  cat("Standard Deviation", curr_col_sd, "\n");
+  cat("\n")
+}
+```
+
+Plot a density of each continuous column
+```{r}
+options(repr.plot.width = 2, repr.plot.height = 2)
+
+for (name in continuous_col_names) {
+  print(
+    ggplot(data, aes(x = data[[name]])) +
+      geom_histogram(aes(y = ..density..), bins = 30, fill = "skyblue", color = "black") +
+      geom_density(linewidth = 1, color = "red") +
+      labs(title = paste("Histogram of", name)) +
+      theme_minimal(base_size = 10) # smaller text for compact plot
+  )
+}
+```
+
+Plot a bar graph for each categorial data
+```{r}
+for (name in categorial_col_names) {
+  print(ggplot(data, aes(x=data[[name]])) + geom_bar() + labs(title=paste("Count of", name)))
+}
+```
+
+
+Plot a scatter plot comparing the song popularity with predictors
+```{r}
+for (name in continuous_col_names) {
+  if (name == "song_popularity") {
+    next
+  }
+  
+  print(ggplot(data, aes(x=data[[name]], y=song_popularity)) + geom_point(size = 2, scale=23) + labs(title=paste("Scatterplot of song popularity vs", name)))
+}
+```
+
+Display variance-covariance matrix
+```{r}
+varcov_matrix = cov(continuous_data)
+print(varcov_matrix)
+```
+
+Display correlation matrix
+```{r}
+cor_matrix = cor(continuous_data)
+print(cor_matrix)
+```
+
+Using the correlation matrix, check for high correlation
+```{r}
+library(corrplot)
+corrplot(cor_matrix)
+```
+```{r}
+# Diagnostics for multicollinearity
+# Correlation heat map shows high correlations between predictor variables
+library(reshape2)
+melted_song <- melt(cor_matrix)
+ggplot(data = melted_song, aes(Var1, Var2, fill = value)) + 
+  geom_tile() + 
+  geom_text(aes(label = ifelse(abs(value) > 0.3, round(value, 2), "")), 
+            size = 2.8, color = "white") +  # Only show values > |0.3|
+  scale_fill_viridis_c(option = "plasma", name = "Correlation") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+We can see high correlation between some predictors:
+- loudness and energy
+- energy and acousticness
+- loudness and acousticness
+
+Split into training and testing data
+```{r}
+set.seed(123456789)
+data_size = nrow(data)
+training_data_size = floor(data_size * 0.8)
+training_index = sample(seq_len(data_size), size=training_data_size)
+
+training_data = data[training_index,]
+testing_data = data[-training_index,]
+```
+
+Standarize data
+
+```{r}
+# standardized_data = as.data.frame(scale(data[, continuous_col_names]))
+standardized_data <- data %>% mutate(tempo = as.numeric(scale(tempo)),
+                                     loudness = as.numeric(scale(loudness)))
+```
+
+
+```{r}
+continuous_predictors = continuous_col_names[continuous_col_names != "song_popularity"]
+
+training_mean = sapply(training_data[continuous_predictors], mean)
+training_sd = sapply(training_data[continuous_predictors], sd)
+
+training_data[continuous_predictors] = scale(training_data[continuous_predictors], center=training_mean, scale=training_sd)
+testing_data[continuous_predictors] = scale(testing_data[continuous_predictors], center=training_mean, scale=training_sd)
+```
+
+## Model Selection
+
+### Main Effect Model
+
+Fit the main effect model
+```{r}
+full_main_model = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=training_data)
+
+summary(full_main_model)
+```
+
+Check for outliers
+```{r}
+studentized_residual = rstudent(full_main_model)
+
+n = dim(training_data)[1]
+p.prime = length(coef(full_main_model))
+
+t.crit = qt(1-0.05/(2*n), n - p.prime - 1)
+
+which(abs(studentized_residual) > t.crit) 
+# number of outliers based on studentized residual
+```
+
+There are no outliers
+
+Check for influential points
+```{r}
+DFFITS  <- dffits(full_main_model)
+DFFITS_influential <- which(abs(DFFITS) > 1)
+cat("DFFITS:", DFFITS_influential, "\n")
+
+D <- cooks.distance(full_main_model)
+D_influential <- which(D > (4 / n))
+# cat("Cook's Distance:", D_influential, "\n")
+
+DFBETAS <- dfbetas(full_main_model)
+DFBETAS_influential_rows <- which(
+  apply(abs(DFBETAS) > (2 / sqrt(n)), 1, any)
+)
+# cat("DFBETAS:", DFBETAS_influential_rows, "\n")
+
+print(length(DFFITS_influential))
+print(length(D_influential))
+print(length(DFBETAS_influential_rows))
+
+```
+
+Plot influential points
+```{r}
+library(ggpubr)
+library(olsrr)
+
+ols_plot_dffits(full_main_model)
+ols_plot_cooksd_chart(full_main_model)
+ols_plot_dfbetas(full_main_model)
+```
+
+
+
+
+```{r}
+influential_idx = sort(unique(c(DFFITS_influential, D_influential, DFBETAS_influential_rows)))
+influential_data = training_data[influential_idx, ]
+```
+
+Drop influential points and fit
+```{r}
+dropped_training_data = training_data[-influential_idx,]
+full_main_model_dropped = lm(song_popularity ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
+
+summary(full_main_model_dropped)
+```
+
+```{r}
+# full model MSE
+sigma2_full <- summary(full_main_model_dropped)$sigma^2
+
+# RSS of the model
+RSS <- sum(residuals(full_main_model_dropped)^2)
+
+# number of parameters including intercept
+p <- length(coef(full_main_model_dropped))
+
+# sample size
+n <- nrow(dropped_training_data)
+
+# Mallows' Cp
+Cp <- RSS / sigma2_full - (n - 2*p)
+Cp
+AIC(full_main_model_dropped)
+BIC(full_main_model_dropped)
+# residuals
+e <- residuals(full_main_model_dropped)
+
+# leverage values
+h <- hatvalues(full_main_model_dropped)
+
+# PRESS
+PRESS <- sum((e / (1 - h))^2)
+PRESS
+```
+
+
+
+```{r}
+# Prepare the intercept model for stepwise AIC
+fit_simple_d = lm(data=dropped_training_data, song_popularity~1) 
+# Conduct Stepwise AIC to select best model1
+stepAIC(fit_simple_d, scope = list(upper=full_main_model_dropped, lower=fit_simple_d),direction="both",trace=TRUE)
+```
+
+```{r}
+model_d1 = lm(formula = song_popularity ~ instrumentalness + audio_valence + 
+    danceability + liveness + loudness + energy + audio_mode + 
+    key + speechiness + acousticness + tempo + time_signature, 
+    data = dropped_training_data)
+summary(model_d1)
+```
+
+```{r}
+# full model MSE
+sigma2_full <- summary(model_d1)$sigma^2
+
+# RSS of the model
+RSS <- sum(residuals(model_d1)^2)
+
+# number of parameters including intercept
+p <- length(coef(model_d1))
+
+# sample size
+n <- nrow(dropped_training_data)
+
+# Mallows' Cp
+Cp <- RSS / sigma2_full - (n - 2*p)
+Cp
+AIC(model_d1)
+BIC(model_d1)
+# residuals
+e <- residuals(model_d1)
+
+# leverage values
+h <- hatvalues(model_d1)
+
+# PRESS
+PRESS <- sum((e / (1 - h))^2)
+PRESS
+```
+
+```{r}
+# Best
+model2_2d = lm(song_popularity ~ instrumentalness + audio_valence + 
+    danceability + liveness + loudness + energy + acousticness + 
+    as.factor(audio_mode) + speechiness + energy:loudness + danceability:tempo + acousticness:energy+ audio_valence:energy+
+                  speechiness:energy + instrumentalness:acousticness+ audio_mode:audio_valence , data = dropped_training_data)
+summary(model2_2d)
+```
+
+```{r}
+# VIF
+library(car)
+vif_values <- vif(model2_2d, type="predictor") # VIF for full model
+VIFbar = mean(vif_values)
+vif_values
+VIFbar
+```
+
+
+```{r}
+# full model MSE
+sigma2_full <- summary(model2_2d)$sigma^2
+
+# RSS of the model
+RSS <- sum(residuals(model2_2d)^2)
+
+# number of parameters including intercept
+p <- length(coef(model2_2d))
+
+# sample size
+n <- nrow(dropped_training_data)
+
+# Mallows' Cp
+Cp <- RSS / sigma2_full - (n - 2*p)
+Cp
+AIC(model2_2d)
+BIC(model2_2d)
+# residuals
+e <- residuals(model2_2d)
+
+# leverage values
+h <- hatvalues(model2_2d)
+
+# PRESS
+PRESS <- sum((e / (1 - h))^2)
+PRESS
+```
+
+```{r}
+# Predictions on the (untouched) test set
+test_pred <- predict(model2_2d, newdata = testing_data)
+
+# Mean Squared Error (MSE)
+MSE_test <- mean((testing_data$song_popularity - test_pred)^2)
+
+# Mean Squared Prediction Error (MSPE)
+MSPE_test <- mean((testing_data$song_popularity - test_pred)^2)
+MSPE_test
+```
+
+
+
+
+```{r}
+DFFITS  <- dffits(full_main_model)
+DFFITS_influential <- which(abs(DFFITS) > 1)
+cat("DFFITS:", DFFITS_influential, "\n")
+
+D <- cooks.distance(full_main_model)
+D_influential <- which(D > (4 / n))
+# cat("Cook's Distance:", D_influential, "\n")
+
+DFBETAS <- dfbetas(full_main_model)
+DFBETAS_influential_rows <- which(
+  apply(abs(DFBETAS) > (2 / sqrt(n)), 1, any)
+)
+# cat("DFBETAS:", DFBETAS_influential_rows, "\n")
+
+print(length(DFFITS_influential))
+print(length(D_influential))
+print(length(DFBETAS_influential_rows))
+```
+
+
+
+Check LINE Assumptions
+```{r}
+plot(full_main_model_dropped)
+```
+
+It seems like normality assumption is violated. We can further check this with Shapiro Wilk Test
+```{r}
+set.seed(123456789)
+
+resid = full_main_model_dropped$residuals
+residual_sample = sample(resid, 5000)
+
+shapiro.test(residual_sample)
+```
+
+We can see that the normality assumption is violated. Check if response variable is all positive
+```{r}
+min(dropped_training_data$song_popularity)
+```
+
+```{r}
+library(MASS)
+boxcox_main_result = boxcox(full_main_model_dropped)
+```
+
+Get the lambda value
+```{r}
+main_lambda = boxcox_main_result$x[which.max(boxcox_main_result$y)]
+main_lambda
+```
+
+Apply a boxcox transformation
+```{r}
+library("psych")
+K2= geometric.mean(dropped_training_data$song_popularity)^(main_lambda-1)
+
+dropped_training_data$song_popularity_box_cox = (dropped_training_data$song_popularity^main_lambda - 1) / (main_lambda*(K2^main_lambda-1))
+```
+
+Fit new model
+```{r}
+full_main_model_box_cox = lm(song_popularity_box_cox ~ song_duration_ms + acousticness + danceability + energy + instrumentalness + liveness + loudness + speechiness + tempo + audio_valence + key + audio_mode + time_signature, data=dropped_training_data)
+```
+
+Check LINE Assumptions now
+```{r}
+plot(full_main_model_box_cox)
+```
+
+```{r}
+set.seed(123456789)
+
+resid = full_main_model_box_cox$residuals
+residual_sample = sample(resid, 5000)
+
+shapiro.test(residual_sample)
+```
+
+
+```{r}
+which(summary(full_main_model_dropped)$coefficients[, "Pr(>|t|)"] >= 0.05)
+```
+
+```{r}
+reduced_model = lm(song_popularity_box_cox ~  speechiness + acousticness + danceability + energy + instrumentalness + liveness + loudness + tempo + audio_valence + audio_mode, data=dropped_training_data)
+```
+
+```{r}
+anova(reduced_model, full_main_model_box_cox)
+```
+
+perform f-test
+```{r}
+f_stat = ((7734637 - 7655049) / 15) / (7655049 / 6600)
+f_crit_val = qf(0.95, df1=15, df2=6600)
+
+f_stat < f_crit_val
+```
+
+Therefore, we cannot drop these columns.
+
+Check VIF values to see if there is multicollinearity
+```{r}
+library(car)
+vif(full_main_model_box_cox)
+```
+
+There is no VIF greater than 10, there is no multicollinearity problem.
+
+
+```{r}
+plot(model2_2d)
+```
+
+
+
+
+Do stepwise
+```{r}
+simple_model = lm(song_popularity ~ 1, data=dropped_training_data)
+step_model = stepAIC(simple_model, scope = list(upper=full_main_model_box_cox, lower=simple_model),direction="both",trace=TRUE)
+```
+  
+Check the summary of the step_model
+```{r}
+summary(step_model)
+```
+
+
